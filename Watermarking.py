@@ -1,78 +1,96 @@
-# app.py
 import streamlit as st
-import cv2
 import numpy as np
-import json
-from dwt_svd_watermark import encode, decode, _save_keys, _load_keys
+import cv2
+import pywt
+from scipy.linalg import svd
+from skimage.metrics import structural_similarity as ssim
+from skimage.metrics import peak_signal_noise_ratio as psnr
 
-st.set_page_config(page_title="DWT+SVD Watermarking", layout="wide")
+# -------------------- Helpers --------------------
+def text_to_watermark(text, shape):
+    """Convert text to binary watermark image with given shape"""
+    wm = np.zeros(shape, dtype=np.uint8)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(wm, text, (10, shape[0]//2), font, 1, (255,), 2, cv2.LINE_AA)
+    return wm
 
-st.title("🔐 DWT+SVD Image Watermarking")
+def dwt_svd_embed(img, watermark, alpha=0.1):
+    """Embed watermark using DWT + SVD"""
+    coeffs = pywt.dwt2(img, 'haar')
+    LL, (LH, HL, HH) = coeffs
 
-tab1 = st.tabs(["🔏 Encode Watermark"])
+    # Apply SVD to LH subband
+    U, S, Vt = svd(LH)
+    wm_resized = cv2.resize(watermark, (LH.shape[1], LH.shape[0]))
+    U_wm, S_wm, Vt_wm = svd(wm_resized.astype(np.float32))
 
-# ------------------- ENCODE -------------------
-with tab1:
-    st.header("Embed Text Watermark")
+    # Embed
+    S_emb = S + alpha * S_wm
+    LH_emb = np.dot(U, np.dot(np.diag(S_emb), Vt))
 
-    host_file = st.file_uploader("Upload host image", type=["jpg", "jpeg", "png"])
-    wm_text = st.text_input("Watermark text", "© Your Name 2025")
-    alpha = st.slider("Embedding strength (alpha)", 0.01, 0.1, 0.05, 0.01)
-    wave = st.selectbox("Wavelet", ["haar", "db2", "db4"])
+    # Reconstruct
+    coeffs_emb = LL, (LH_emb, HL, HH)
+    watermarked_img = pywt.idwt2(coeffs_emb, 'haar')
+    return np.uint8(np.clip(watermarked_img, 0, 255)), (U, S, Vt)
 
-    if st.button("Encode Watermark", type="primary"):
-        if host_file:
-            # Load image
-            file_bytes = np.asarray(bytearray(host_file.read()), dtype=np.uint8)
-            host_img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+def dwt_svd_extract(img, U, S, Vt, alpha=0.1, shape=(128, 128)):
+    """Extract watermark using inverse embedding"""
+    coeffs = pywt.dwt2(img, 'haar')
+    LL, (LH, HL, HH) = coeffs
 
-            # Encode
-            watermarked, keys, metrics = encode(host_img, wm_text, alpha=alpha, wave=wave)
+    U_new, S_new, Vt_new = svd(LH)
+    S_wm_extracted = (S_new - S) / alpha
+    wm_extracted = np.dot(U, np.dot(np.diag(S_wm_extracted), Vt))
+    wm_resized = cv2.resize(wm_extracted, (shape[1], shape[0]))
+    return np.uint8(np.clip(wm_resized, 0, 255))
 
-            # Convert BGR to RGB for display
-            wm_rgb = cv2.cvtColor(watermarked, cv2.COLOR_BGR2RGB)
+# -------------------- Streamlit App --------------------
+st.title("🖼️ DWT + SVD Image Watermarking")
 
-            st.subheader("Watermarked Image")
-            st.image(wm_rgb, channels="RGB", use_column_width=True)
-            st.write(f"**PSNR:** {metrics['psnr']:.2f} dB | **SSIM:** {metrics['ssim']:.4f}")
+st.sidebar.header("Options")
+alpha = st.sidebar.slider("Embedding Strength (alpha)", 0.01, 0.5, 0.1)
 
-            # Download watermarked image
-            _, buffer = cv2.imencode(".png", watermarked)
-            st.download_button("Download Watermarked Image", buffer.tobytes(),
-                               file_name="watermarked.png", mime="image/png")
+uploaded_file = st.file_uploader("Upload Artwork", type=["jpg", "png", "jpeg"])
+watermark_text = st.text_input("Enter your copyright text", "© MyArt")
 
-            # Download keys.json
-            keys_json = json.dumps(keys, indent=2).encode("utf-8")
-            st.download_button("Download Keys JSON", keys_json,
-                               file_name="keys.json", mime="application/json")
-        else:
-            st.warning("Please upload a host image.")
+if uploaded_file is not None:
+    # Read image
+    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+    img = cv2.imdecode(file_bytes, cv2.IMREAD_GRAYSCALE)
 
-# ------------------- DECODE -------------------
+    st.image(img, caption="Original Image", use_column_width=True)
 
-    st.header("Extract Watermark")
+    # Generate watermark
+    watermark = text_to_watermark(watermark_text, (128, 128))
+    st.image(watermark, caption="Generated Watermark", use_column_width=True)
 
-    suspect_file = st.file_uploader("Upload suspect image", type=["jpg", "jpeg", "png"])
-    keys_file = st.file_uploader("Upload keys.json", type=["json"])
+    if st.button("Embed Watermark"):
+        watermarked_img, svd_keys = dwt_svd_embed(img, watermark, alpha)
+        st.image(watermarked_img, caption="Watermarked Image", use_column_width=True)
 
-    if st.button("Decode Watermark", type="primary"):
-        if suspect_file and keys_file:
-            # Load suspect image
-            file_bytes = np.asarray(bytearray(suspect_file.read()), dtype=np.uint8)
-            suspect_img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        # Store in session
+        st.session_state["watermarked_img"] = watermarked_img
+        st.session_state["svd_keys"] = svd_keys
+        st.session_state["orig_img"] = img
+        st.session_state["watermark"] = watermark
 
-            # Load keys
-            keys = json.load(keys_file)
+    if "watermarked_img" in st.session_state and st.button("Extract Watermark"):
+        wm_extracted = dwt_svd_extract(
+            st.session_state["watermarked_img"],
+            *st.session_state["svd_keys"],
+            alpha=alpha,
+            shape=st.session_state["watermark"].shape
+        )
+        st.image(wm_extracted, caption="Extracted Watermark", use_column_width=True)
 
-            # Decode
-            extracted, metrics = decode(suspect_img, keys)
-            st.subheader("Extracted Watermark")
-            st.image(extracted, channels="GRAY", use_column_width=True)
-            st.write(f"**Normalized Correlation (NC):** {metrics['nc']:.4f}")
+        # Metrics
+        psnr_val = psnr(st.session_state["orig_img"], st.session_state["watermarked_img"])
+        ssim_val = ssim(st.session_state["orig_img"], st.session_state["watermarked_img"])
 
-            # Download extracted watermark
-            _, buffer = cv2.imencode(".png", extracted)
-            st.download_button("Download Extracted Watermark", buffer.tobytes(),
-                               file_name="extracted.png", mime="image/png")
-        else:
-            st.warning("Please upload both suspect image and keys.json.")
+        accuracy = np.sum(
+            st.session_state["watermark"] == (wm_extracted > 128).astype(np.uint8)*255
+        ) / st.session_state["watermark"].size * 100
+
+        st.write(f"🔹 **PSNR**: {psnr_val:.2f} dB")
+        st.write(f"🔹 **SSIM**: {ssim_val:.4f}")
+        st.write(f"🔹 **Watermark Extraction Accuracy**: {accuracy:.2f}%")
