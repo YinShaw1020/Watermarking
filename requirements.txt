@@ -1,6 +1,6 @@
 streamlit
-opencv-python
 numpy
 scipy
 pywavelets
+opencv-python-headless
 scikit-image
