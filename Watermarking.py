@@ -58,6 +58,11 @@ if uploaded_file is not None:
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, cv2.IMREAD_GRAYSCALE)
 
+    # Resize for performance
+    max_size = 512
+    if img.shape[0] > max_size or img.shape[1] > max_size:
+        img = cv2.resize(img, (max_size, max_size))
+
     st.image(img, caption="Original Image", use_column_width=True)
 
     # Generate watermark
@@ -65,32 +70,34 @@ if uploaded_file is not None:
     st.image(watermark, caption="Generated Watermark", use_column_width=True)
 
     if st.button("Embed Watermark"):
-        watermarked_img, svd_keys = dwt_svd_embed(img, watermark, alpha)
-        st.image(watermarked_img, caption="Watermarked Image", use_column_width=True)
+        with st.spinner("Embedding watermark..."):
+            watermarked_img, svd_keys = dwt_svd_embed(img, watermark, alpha)
+            st.image(watermarked_img, caption="Watermarked Image", use_column_width=True)
 
-        # Store in session
-        st.session_state["watermarked_img"] = watermarked_img
-        st.session_state["svd_keys"] = svd_keys
-        st.session_state["orig_img"] = img
-        st.session_state["watermark"] = watermark
+            # Store in session
+            st.session_state["watermarked_img"] = watermarked_img
+            st.session_state["svd_keys"] = svd_keys
+            st.session_state["orig_img"] = img
+            st.session_state["watermark"] = watermark
 
     if "watermarked_img" in st.session_state and st.button("Extract Watermark"):
-        wm_extracted = dwt_svd_extract(
-            st.session_state["watermarked_img"],
-            *st.session_state["svd_keys"],
-            alpha=alpha,
-            shape=st.session_state["watermark"].shape
-        )
-        st.image(wm_extracted, caption="Extracted Watermark", use_column_width=True)
+        with st.spinner("Extracting watermark..."):
+            wm_extracted = dwt_svd_extract(
+                st.session_state["watermarked_img"],
+                *st.session_state["svd_keys"],
+                alpha=alpha,
+                shape=st.session_state["watermark"].shape
+            )
+            st.image(wm_extracted, caption="Extracted Watermark", use_column_width=True)
 
-        # Metrics
-        psnr_val = psnr(st.session_state["orig_img"], st.session_state["watermarked_img"])
-        ssim_val = ssim(st.session_state["orig_img"], st.session_state["watermarked_img"])
+            # Metrics
+            psnr_val = psnr(st.session_state["orig_img"], st.session_state["watermarked_img"])
+            ssim_val = ssim(st.session_state["orig_img"], st.session_state["watermarked_img"])
 
-        accuracy = np.sum(
-            st.session_state["watermark"] == (wm_extracted > 128).astype(np.uint8)*255
-        ) / st.session_state["watermark"].size * 100
+            accuracy = np.sum(
+                st.session_state["watermark"] == (wm_extracted > 128).astype(np.uint8)*255
+            ) / st.session_state["watermark"].size * 100
 
-        st.write(f"🔹 **PSNR**: {psnr_val:.2f} dB")
-        st.write(f"🔹 **SSIM**: {ssim_val:.4f}")
-        st.write(f"🔹 **Watermark Extraction Accuracy**: {accuracy:.2f}%")
+            st.write(f"🔹 **PSNR**: {psnr_val:.2f} dB")
+            st.write(f"🔹 **SSIM**: {ssim_val:.4f}")
+            st.write(f"🔹 **Watermark Extraction Accuracy**: {accuracy:.2f}%")
