@@ -1,7 +1,7 @@
-streamlit==1.36.0
-numpy==1.26.4
-scipy==1.11.4
-opencv-python-headless==4.9.0.80
-scikit-image==0.22.0
-pywavelets==1.5.0
-matplotlib==3.8.2
+streamlit
+numpy
+scipy
+opencv-python-headless
+scikit-image
+pywavelets
+matplotlib
