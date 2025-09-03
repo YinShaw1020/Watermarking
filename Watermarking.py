@@ -163,7 +163,7 @@ def mA_extract(attacked_img, HL_dct_ref, alpha, wm_shape):
 
 
 # ========================= Method B: DWT + SVD (select subband) =========================
-def mB_embed(host_gray, wm_gray, alpha=0.05, subband_type="LL"):
+def mB_embed(host_gray, wm_gray, alpha=0.05, subband_type=""):
     LL, (LH, HL, HH) = pywt.dwt2(host_gray, "haar")
 
     if subband_type == "LL":
@@ -447,7 +447,7 @@ if run:
     # -------------------- Method B (LL) --------------------
     B = st.container()
     with B:
-        B_img, B_keys, B_wm_keys, B_wm_shape = mB_embed(host_small, wm, alpha=alpha_B, subband_type="LL")
+        B_img, B_keys, B_wm_keys, B_wm_shape = mB_embed(host_small, wm, alpha=alpha_B, subband_type="LH")
         B_att = apply_attack(B_img, attack, ksize=ksize, sigma=sigma, jpeg_q=jpeg_q, gauss_std=gauss_std)
         B_att = crop_like(B_att, host_small)
         B_ex_orig = mB_extract(B_img, B_keys, B_wm_keys, B_wm_shape, alpha=alpha_B)
@@ -549,3 +549,4 @@ if run:
             f"- Host (canvas) PSNR/SSIM: **{D_host_psnr:.2f} dB**, **{D_host_ssim:.4f}** | After attack: **{D_att_psnr:.2f} dB**, **{D_att_ssim:.4f}**\n"
             f"- WM PSNR/SSIM/NC/BER: **{D_wm_psnr:.2f} dB**, **{D_wm_ssim:.4f}**, **NC {D_nc:.4f}**, **BER {D_ber:.4f}**"
         )
+
