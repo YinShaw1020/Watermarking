@@ -217,7 +217,7 @@ def mB_extract(attacked_img, host_keys, wm_keys, wm_shape, alpha=0.05):
     Ua, Sa, Vta = np.linalg.svd(subband2, full_matrices=False)
     Sw_ex = (Sa - S) / alpha
     wm_ex = np.dot(Uw, np.dot(np.diag(Sw_ex), Vtw))
-    wm_ex = np.uint8(np.clip(wm_ex, 0, 255))
+    wm_ex = (wm_ex > 128).astype(np.uint8) * 255
     return wm_ex
 
 
@@ -549,4 +549,5 @@ if run:
             f"- Host (canvas) PSNR/SSIM: **{D_host_psnr:.2f} dB**, **{D_host_ssim:.4f}** | After attack: **{D_att_psnr:.2f} dB**, **{D_att_ssim:.4f}**\n"
             f"- WM PSNR/SSIM/NC/BER: **{D_wm_psnr:.2f} dB**, **{D_wm_ssim:.4f}**, **NC {D_nc:.4f}**, **BER {D_ber:.4f}**"
         )
+
 
